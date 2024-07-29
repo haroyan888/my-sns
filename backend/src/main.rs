@@ -4,11 +4,12 @@ use backend::article::{
 	handler::create_app_article,
 };
 use sqlx::SqlitePool;
+use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
 	// .envファイルの適応
-	dotenvy::from_path("../.env").ok();
+	dotenvy::from_path("./.env").ok();
 	// ログレベルの設定
 	env_logger::init();
 
@@ -35,5 +36,7 @@ async fn main() {
 }
 
 fn create_app<T: ArticleRepository>(article_repos: T) -> Router {
-	Router::new().nest("/article", create_app_article(article_repos))
+	Router::new()
+		.nest("/article", create_app_article(article_repos))
+		.layer(CorsLayer::new().allow_origin(Any).allow_methods(Any))
 }

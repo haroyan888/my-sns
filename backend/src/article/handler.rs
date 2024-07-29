@@ -7,6 +7,7 @@ use axum::{
 };
 use std::sync::Arc;
 
+use super::super::modules::ValidatedJson;
 use super::controller::{ArticleRepository, ArticleRepositoryError, CreateArticle, UpdateArticle};
 
 pub fn create_app_article<T: ArticleRepository>(repository: T) -> Router {
@@ -23,7 +24,7 @@ pub fn create_app_article<T: ArticleRepository>(repository: T) -> Router {
 
 async fn create_article<T: ArticleRepository>(
 	Extension(ref repository): Extension<Arc<T>>,
-	Json(payload): Json<CreateArticle>,
+	ValidatedJson(payload): ValidatedJson<CreateArticle>,
 ) -> Result<impl IntoResponse, StatusCode> {
 	let article = repository
 		.create(payload)
@@ -59,7 +60,7 @@ async fn get_article<T: ArticleRepository>(
 async fn edit_article<T: ArticleRepository>(
 	Extension(ref repository): Extension<Arc<T>>,
 	Path(article_id): Path<String>,
-	Json(payload): Json<UpdateArticle>,
+	ValidatedJson(payload): ValidatedJson<UpdateArticle>,
 ) -> Result<impl IntoResponse, StatusCode> {
 	let article = repository
 		.edit(payload, &article_id)

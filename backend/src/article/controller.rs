@@ -1,6 +1,7 @@
 use axum::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
+use validator::Validate;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ArticleRepositoryError {
@@ -10,8 +11,9 @@ pub enum ArticleRepositoryError {
 	NotFound(String),
 }
 
-#[derive(sqlx::FromRow, Serialize)]
+#[derive(sqlx::FromRow, Serialize, Deserialize)]
 pub struct Article {
+	#[serde(rename = "id")]
 	pub article_id: String,
 	//user_id: String,
 	pub body: String,
@@ -28,14 +30,16 @@ impl Article {
 	}
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Validate)]
 pub struct CreateArticle {
 	// user_id: String,
+	#[validate(length(min = 1, max = 500))]
 	pub body: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Validate)]
 pub struct UpdateArticle {
+	#[validate(length(min = 1, max = 500))]
 	pub body: String,
 }
 
@@ -94,9 +98,10 @@ impl ArticleRepository for ArticleRepositoryForDB {
 		Ok(created_article)
 	}
 	async fn get_all(&self) -> anyhow::Result<Vec<Article>> {
-		let articles = sqlx::query_as::<_, Article>(r#"SELECT * FROM article;"#)
-			.fetch_all(&self.pool)
-			.await?;
+		let articles =
+			sqlx::query_as::<_, Article>(r#"SELECT * FROM article ORDER BY post_date DESC;"#)
+				.fetch_all(&self.pool)
+				.await?;
 		Ok(articles)
 	}
 	async fn get(&self, article_id: &str) -> Result<Article, ArticleRepositoryError> {
