@@ -44,7 +44,7 @@ pub struct UpdateArticle {
 }
 
 #[async_trait]
-pub trait ArticleRepository: Clone + std::marker::Send + std::marker::Sync + 'static {
+pub trait ArticleRepository: Clone + Send + Sync + 'static {
 	async fn create(&self, payload: CreateArticle) -> anyhow::Result<Article>;
 	async fn get_all(&self) -> anyhow::Result<Vec<Article>>;
 	async fn get(&self, article_id: &str) -> Result<Article, ArticleRepositoryError>;
