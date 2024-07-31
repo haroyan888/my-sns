@@ -2,7 +2,7 @@ import { Article } from "../../types/article";
 
 type props = {
 	article: Article;
-	key: string | undefined;
+	key?: string;
 };
 
 export default function ArticleCard({ article, key }: props) {

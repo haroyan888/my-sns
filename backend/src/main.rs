@@ -38,5 +38,10 @@ async fn main() {
 fn create_app<T: ArticleRepository>(article_repos: T) -> Router {
 	Router::new()
 		.nest("/article", create_app_article(article_repos))
-		.layer(CorsLayer::new().allow_origin(Any).allow_methods(Any))
+		.layer(
+			CorsLayer::new()
+				.allow_origin(Any)
+				.allow_methods(Any)
+				.allow_headers(Any),
+		)
 }
