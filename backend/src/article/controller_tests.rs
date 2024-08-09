@@ -1,10 +1,11 @@
 use controller::ArticleRepository;
 
-use super::super::database;
 use super::*;
+use crate::database;
 
 #[tokio::test]
 async fn article_crud_scenario() {
+	dotenvy::dotenv().ok();
 	/* データベース */
 	let pool = database::create_sqlite_pool()
 		.await
@@ -16,6 +17,7 @@ async fn article_crud_scenario() {
 	let new_article = controller::CreateArticle {
 		body: new_article_body.to_string(),
 	};
+
 	let created_article = article_repository
 		.create(new_article)
 		.await
@@ -24,7 +26,7 @@ async fn article_crud_scenario() {
 
 	/* find */
 	let found_article = article_repository
-		.get(&created_article.article_id)
+		.find(&created_article.article_id)
 		.await
 		.expect("[find] returned Err");
 	assert_eq!(new_article_body, found_article.body);
@@ -55,7 +57,7 @@ async fn article_crud_scenario() {
 		.delete(&created_article.article_id)
 		.await
 		.expect("[delete] returning Err");
-	let res = article_repository.get(&created_article.article_id).await;
+	let res = article_repository.find(&created_article.article_id).await;
 	assert!(res.is_err());
 	let article_rows = sqlx::query(r#"SELECT * FROM article WHERE article_id = $1"#)
 		.bind(created_article.article_id.clone())

@@ -7,7 +7,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use super::super::modules::ValidatedJson;
+use super::super::modules::custom_validators::ValidatedJson;
 use super::controller::{ArticleRepository, ArticleRepositoryError, CreateArticle, UpdateArticle};
 
 pub fn create_app_article<T: ArticleRepository>(repository: T) -> Router {
@@ -49,7 +49,7 @@ async fn get_article<T: ArticleRepository>(
 	Extension(ref repository): Extension<Arc<T>>,
 	Path(article_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
-	let article = repository.get(&article_id).await.map_err(|e| match e {
+	let article = repository.find(&article_id).await.map_err(|e| match e {
 		ArticleRepositoryError::NotFound(_) => StatusCode::NOT_FOUND,
 		ArticleRepositoryError::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
 	})?;

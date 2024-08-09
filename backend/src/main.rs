@@ -3,7 +3,7 @@ use backend::article::{
 	controller::{ArticleRepository, ArticleRepositoryForDB},
 	handler::create_app_article,
 };
-use sqlx::SqlitePool;
+use backend::database;
 use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
@@ -16,8 +16,7 @@ async fn main() {
 	let host = std::env::var("APP_HOST").expect("APP_HOSTが環境変数に設定されていません");
 	let port = std::env::var("APP_PORT").expect("APP_HOSTが環境変数に設定されていません");
 
-	let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URLが環境変数に設定されていません");
-	let pool = SqlitePool::connect(&db_url)
+	let pool = database::create_sqlite_pool()
 		.await
 		.expect("データベースの接続に失敗しました");
 	let article_repos = ArticleRepositoryForDB::new(pool);
