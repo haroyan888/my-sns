@@ -56,4 +56,6 @@ async fn account_crud_scenario() {
 		AccountRepositoryError::NotFound(_) => println!("[delete] success!"),
 		_ => panic!("[delete] returned Err"),
 	}
+
+	pool.close().await;
 }

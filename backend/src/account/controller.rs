@@ -1,6 +1,6 @@
 use axum::async_trait;
 use serde::{Deserialize, Serialize};
-use sqlx::{Acquire, SqlitePool};
+use sqlx::SqlitePool;
 use validator::Validate;
 
 use crate::modules::{
@@ -78,8 +78,7 @@ impl AccountRepositoryForDB {
 #[async_trait]
 impl AccountRepository for AccountRepositoryForDB {
 	async fn create(&self, payload: CreateAccount) -> anyhow::Result<Account> {
-		let mut conn = self.pool.acquire().await?;
-		let mut tx = conn.begin().await?;
+		let mut tx = self.pool.begin().await?;
 		/* パスワードのハッシュ化 */
 		let (salt, hashed_password) = gen_hash_and_salt_from_str(&payload.password);
 		let res_create_account = sqlx::query_as::<_, Account>(
@@ -98,26 +97,32 @@ impl AccountRepository for AccountRepositoryForDB {
 			Err(_) => tx.rollback().await?,
 		};
 
-		conn.close().await?;
 		Ok(res_create_account?)
 	}
 
 	async fn find(&self, user_id: &str) -> Result<Account, AccountRepositoryError> {
+		let mut tx =
+			self.pool.begin().await.map_err(|_| {
+				AccountRepositoryError::Unexpected("failed to start transaction".to_string())
+			})?;
 		let account = sqlx::query_as(r#"SELECT * FROM account WHERE user_id=$1;"#)
 			.bind(user_id)
-			.fetch_one(&self.pool)
+			.fetch_one(&mut *tx)
 			.await
 			.map_err(|e| match e {
 				sqlx::Error::RowNotFound => AccountRepositoryError::NotFound(user_id.to_string()),
 				_ => AccountRepositoryError::Unexpected(e.to_string()),
 			})?;
 
+		tx.commit().await.map_err(|_| {
+			AccountRepositoryError::Unexpected("failed to commit transaction".to_string())
+		})?;
+
 		Ok(account)
 	}
 
 	async fn delete(&self, user_id: &str) -> anyhow::Result<()> {
-		let mut conn = self.pool.acquire().await?;
-		let mut tx = conn.begin().await?;
+		let mut tx = self.pool.begin().await?;
 		let res_delete_account = sqlx::query(r#"DELETE FROM account WHERE user_id=$1;"#)
 			.bind(user_id)
 			.execute(&mut *tx)
@@ -127,7 +132,6 @@ impl AccountRepository for AccountRepositoryForDB {
 			Ok(_) => tx.commit().await?,
 			Err(_) => tx.rollback().await?,
 		};
-		conn.close().await?;
 		match res_delete_account {
 			Ok(_) => return Ok(()),
 			Err(e) => return Err(e.into()),

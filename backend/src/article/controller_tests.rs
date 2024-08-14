@@ -65,4 +65,6 @@ async fn article_crud_scenario() {
 		.await
 		.expect("[delete] returning Err");
 	assert!(article_rows.is_empty());
+
+	pool.close().await;
 }

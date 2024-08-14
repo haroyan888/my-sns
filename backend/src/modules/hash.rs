@@ -6,13 +6,13 @@ use crypto::sha2::Sha256;
 pub fn gen_hash_and_salt_from_str(before: &str) -> (String, String) {
 	let salt = gen_rand_chars(32);
 	let mut sha256 = Sha256::new();
-	sha256.input_str(&(before.to_string() + &salt));
+	sha256.input_str(&(before.to_string() + salt.as_str()));
 	(salt.clone(), sha256.result_str())
 }
 
 pub fn gen_hash_from_str_and_salt(before: &str, salt: &str) -> String {
 	let mut sha256 = Sha256::new();
-	sha256.input_str(&(before.to_string() + &salt));
+	sha256.input_str(&(before.to_string() + salt));
 	sha256.result_str()
 }
 

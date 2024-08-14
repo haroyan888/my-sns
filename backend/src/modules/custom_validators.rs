@@ -42,7 +42,7 @@ pub fn validate_password(value: &str) -> Result<(), ValidationError> {
 		'_', ';', '@', '-', '.',
 	];
 	let available_chars = [lower_case_letters, upper_case_letters, numbers, symbols].concat();
-	return validate_from_chars(value, &available_chars);
+	validate_from_chars(value, &available_chars)
 }
 
 pub fn validate_user_id(value: &str) -> Result<(), ValidationError> {
@@ -51,7 +51,7 @@ pub fn validate_user_id(value: &str) -> Result<(), ValidationError> {
 	let numbers: Vec<char> = ('0'..='9').collect();
 	let symbols: Vec<char> = vec!['_', '-'];
 	let available_chars = [lower_case_letters, upper_case_letters, numbers, symbols].concat();
-	return validate_from_chars(value, &available_chars);
+	validate_from_chars(value, &available_chars)
 }
 
 fn validate_from_chars(value: &str, check_chars: &[char]) -> Result<(), ValidationError> {

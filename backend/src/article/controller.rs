@@ -1,6 +1,6 @@
 use axum::async_trait;
 use serde::{Deserialize, Serialize};
-use sqlx::{Acquire, SqlitePool};
+use sqlx::SqlitePool;
 use validator::Validate;
 
 // use crate::modules::gen_string::gen_rand_chars;
@@ -72,55 +72,79 @@ impl ArticleRepositoryForDB {
 #[async_trait]
 impl ArticleRepository for ArticleRepositoryForDB {
 	async fn create(&self, payload: CreateArticle) -> anyhow::Result<Article> {
-		let mut conn = self.pool.acquire().await?;
-		let mut tx = conn.begin().await?;
+		let mut tx = self.pool.begin().await?;
 		const ID_LEN: u32 = 32;
-		let mut include_id = true;
+		let mut is_include_id = true;
 		let mut count: u32 = 0;
 		let mut article_id = String::new();
-		while include_id {
+		while is_include_id {
 			article_id = gen_rand_chars(ID_LEN);
-			include_id = sqlx::query_as::<_, (bool,)>(r#"SELECT $1 in (SELECT article_id FROM article)"#)
-				.bind(&article_id)
-				.fetch_one(&mut *tx)
-				.await?
-				.0;
+			let is_include_id_res =
+				sqlx::query_as::<_, (bool,)>(r#"SELECT $1 in (SELECT article_id FROM article)"#)
+					.bind(&article_id)
+					.fetch_one(&mut *tx)
+					.await;
+			if is_include_id_res.is_err() {
+				tx.rollback().await?;
+				return Err(anyhow::Error::msg("failed to search included article id"));
+			}
+			is_include_id = is_include_id_res.unwrap().0;
 			if count >= 5 {
+				tx.rollback().await?;
 				return Err(anyhow::Error::msg("登録に失敗しました"));
 			}
 			count += 1;
 		}
 
-		let created_article = sqlx::query_as::<_, Article>(
+		let created_article_res = sqlx::query_as::<_, Article>(
 			r#"INSERT INTO article(article_id, body) VALUES ($1, $2) RETURNING *;"#,
 		)
 		.bind(&article_id)
 		.bind(&payload.body)
 		.fetch_one(&mut *tx)
-		.await?;
+		.await;
 
-		tx.commit().await?;
-		conn.close().await?;
-		Ok(created_article)
+		match created_article_res {
+			Ok(_) => tx.commit().await?,
+			Err(_) => tx.rollback().await?,
+		}
+
+		Ok(created_article_res?)
 	}
 
 	async fn get_all(&self) -> anyhow::Result<Vec<Article>> {
-		let articles =
+		let mut tx = self.pool.begin().await?;
+		let get_all_articles_res =
 			sqlx::query_as::<_, Article>(r#"SELECT * FROM article ORDER BY post_date DESC;"#)
-				.fetch_all(&self.pool)
-				.await?;
-		Ok(articles)
+				.fetch_all(&mut *tx)
+				.await;
+		match get_all_articles_res {
+			Ok(_) => tx.commit().await?,
+			Err(_) => tx.rollback().await?,
+		}
+
+		Ok(get_all_articles_res?)
 	}
 
 	async fn find(&self, article_id: &str) -> Result<Article, ArticleRepositoryError> {
-		let article = sqlx::query_as(r#"SELECT * FROM article WHERE article_id = $1;"#)
-			.bind(article_id)
-			.fetch_one(&self.pool)
-			.await
-			.map_err(|e| match e {
-				sqlx::Error::RowNotFound => ArticleRepositoryError::NotFound(article_id.to_string()),
-				_ => ArticleRepositoryError::Unexpected(e.to_string()),
+		let mut tx =
+			self.pool.begin().await.map_err(|_| {
+				ArticleRepositoryError::Unexpected("failed to start transaction".to_string())
 			})?;
+		let find_res = sqlx::query_as(r#"SELECT * FROM article WHERE article_id = $1;"#)
+			.bind(article_id)
+			.fetch_one(&mut *tx)
+			.await;
+
+		tx.commit().await.map_err(|_| {
+			ArticleRepositoryError::Unexpected("failed to commit transaction".to_string())
+		})?;
+
+		let article = find_res.map_err(|e| match e {
+			sqlx::Error::RowNotFound => ArticleRepositoryError::NotFound(article_id.to_string()),
+			_ => ArticleRepositoryError::Unexpected(e.to_string()),
+		})?;
+
 		Ok(article)
 	}
 
@@ -129,65 +153,63 @@ impl ArticleRepository for ArticleRepositoryForDB {
 		payload: UpdateArticle,
 		article_id: &str,
 	) -> Result<Article, ArticleRepositoryError> {
-		let mut conn = self
+		let mut tx = self
 			.pool
-			.acquire()
-			.await
-			.map_err(|e| ArticleRepositoryError::Unexpected(e.to_string()))?;
-		let mut tx = conn
 			.begin()
 			.await
 			.map_err(|e| ArticleRepositoryError::Unexpected(e.to_string()))?;
 
-		let updated_article = sqlx::query_as::<_, Article>(
+		let update_res = sqlx::query_as::<_, Article>(
 			r#"UPDATE article SET body = $1 WHERE article_id = $2 RETURNING *;"#,
 		)
 		.bind(payload.body)
 		.bind(article_id)
 		.fetch_one(&mut *tx)
-		.await
-		.map_err(|e| match e {
+		.await;
+
+		match update_res {
+			Ok(_) => tx.commit().await.map_err(|_| {
+				ArticleRepositoryError::Unexpected("failed to commit transaction".to_string())
+			})?,
+			Err(_) => tx.rollback().await.map_err(|_| {
+				ArticleRepositoryError::Unexpected("failed to rollback transaction".to_string())
+			})?,
+		}
+
+		let updated_article = update_res.map_err(|e| match e {
 			sqlx::Error::RowNotFound => ArticleRepositoryError::NotFound(article_id.to_string()),
 			_ => ArticleRepositoryError::Unexpected(e.to_string()),
 		})?;
 
-		tx.commit()
-			.await
-			.map_err(|e| ArticleRepositoryError::Unexpected(e.to_string()))?;
-		conn
-			.close()
-			.await
-			.map_err(|e| ArticleRepositoryError::Unexpected(e.to_string()))?;
 		Ok(updated_article)
 	}
 
 	async fn delete(&self, article_id: &str) -> Result<(), ArticleRepositoryError> {
-		let mut conn = self
+		let mut tx = self
 			.pool
-			.acquire()
-			.await
-			.map_err(|e| ArticleRepositoryError::Unexpected(e.to_string()))?;
-		let mut tx = conn
 			.begin()
 			.await
 			.map_err(|e| ArticleRepositoryError::Unexpected(e.to_string()))?;
 
-		sqlx::query(r#"DELETE FROM article WHERE article_id = $1"#)
+		let delete_res = sqlx::query(r#"DELETE FROM article WHERE article_id = $1"#)
 			.bind(article_id)
 			.execute(&mut *tx)
-			.await
-			.map_err(|e| match e {
-				sqlx::Error::RowNotFound => ArticleRepositoryError::NotFound(article_id.to_string()),
-				_ => ArticleRepositoryError::Unexpected(e.to_string()),
-			})?;
+			.await;
 
-		tx.commit()
-			.await
-			.map_err(|e| ArticleRepositoryError::Unexpected(e.to_string()))?;
-		conn
-			.close()
-			.await
-			.map_err(|e| ArticleRepositoryError::Unexpected(e.to_string()))?;
+		match delete_res {
+			Ok(_) => tx.commit().await.map_err(|_| {
+				ArticleRepositoryError::Unexpected("failed to commit transaction".to_string())
+			})?,
+			Err(_) => tx.rollback().await.map_err(|_| {
+				ArticleRepositoryError::Unexpected("failed to rollback transaction".to_string())
+			})?,
+		}
+
+		delete_res.map_err(|e| match e {
+			sqlx::Error::RowNotFound => ArticleRepositoryError::NotFound(article_id.to_string()),
+			_ => ArticleRepositoryError::Unexpected(e.to_string()),
+		})?;
+
 		Ok(())
 	}
 }
